@@ -8,6 +8,8 @@ import os
 from PIL import Image
 import wandb
 
+from fastai.vision import Resize
+
 # same entity for now, two projects
 # evalserve_answers"
 # evalserve
@@ -39,8 +41,9 @@ class_set = wandb.Classes([{'name': name, 'id': id}
 demo_at = wandb.Artifact("test_data", type="test_dataset")
 answers_at = wandb.Artifact("answer_key", type="labeled_test_dataset")
 
-images = [f for f in os.listdir(SRC_IMAGES)[:NUM_EXAMPLES]]
+images = [f for f in os.listdir(SRC_IMAGES)][:NUM_EXAMPLES]
 for idx, image in enumerate(images):
+  print("image: ", image)
   image_file = os.path.join(SRC_IMAGES, image)
   train_id = image.split(".")[0]
   label_file = os.path.join(SRC_LABELS, train_id + "_train_id.png")
@@ -50,12 +53,12 @@ for idx, image in enumerate(images):
   annotated = wandb.Image(image_file, classes=class_set,
                         masks={"ground_truth" : {"mask_data": np.array(Image.open(label_file))}})
 
-  demo_at.add_file(image_file, os.path.join("images", image_file))
+  demo_at.add_file(image_file, os.path.join("images", image))
   demo_table.add_data(train_id, raw_image)
 
-  answers_at.add_file(image_file, os.path.join("images", image_file))
-  answers_at.add_file(label_file, os.path.join("labels", label_file))
-  answer_table.add_data(train_id, raw_image, annotated, wandb.Image(label_file))
+  answers_at.add_file(image_file, os.path.join("images", image))
+  answers_at.add_file(label_file, os.path.join("labels", train_id + "_train_id.png"))
+  answer_table.add_data(train_id, raw_image, annotated, wandb.Image(np.array(Image.open(label_file))))
 
 demo_at.add(demo_table, "train_data")
 answers_at.add(answer_table, "answer_key")
