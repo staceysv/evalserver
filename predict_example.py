@@ -10,41 +10,21 @@
 import numpy as np
 import os
 from PIL import Image
+import util
 import wandb
 
 from pathlib import Path
 from fastai.vision import *
 from fastai.callbacks.hooks import *
 from fastai.callback import Callback
+
+# TODO:probably don't need these
 import json
 from wandb.fastai import WandbCallback
 from functools import partialmethod
 
-
-DEMO_PROJECT = "evalserve"
-PREDICT_PROJECT = "evalserve_predict"
 TRAINING_PROJECT = "dsviz-segment"
 MODEL_NAME = "resnet18"
-
-
-# classes
-BDD_CLASSES = [
-    'road', 'sidewalk', 'building', 'wall', 'fence', 'pole', 'traffic light',
-    'traffic sign', 'vegetation', 'terrain', 'sky', 'person', 'rider', 'car',
-    'truck', 'bus', 'train', 'motorcycle', 'bicycle', 'void'
-]
-BDD_IDS = list(range(len(BDD_CLASSES) - 1)) + [255]
-class_set = wandb.Classes([{'name': name, 'id': id} 
-                           for name, id in zip(BDD_CLASSES, BDD_IDS)])
-
-# wrapper for logging masks to W&B
-def wb_mask(bg_img, pred_mask=[], true_mask=[]):
-  masks = {}
-  if len(pred_mask) > 0:
-    masks["prediction"] = {"mask_data" : pred_mask}
-  if len(true_mask) > 0:
-    masks["ground truth"] = {"mask_data" : true_mask}
-  return wandb.Image(bg_img, classes=class_set, masks=masks)
 
 SMOOTH = 1e-6
 # IOU loss function
@@ -56,10 +36,10 @@ def iou(input, target):
     return iou.mean()
 
 
-run = wandb.init(project=PREDICT_PROJECT, job_type="test")
+run = wandb.init(project=util.SUBMIT_PROJECT, job_type="test")
 
 # get test data
-TEST_DATA_AT = "{}/test_data:latest".format(DEMO_PROJECT)
+TEST_DATA_AT = "{}/test_data:latest".format(util.DEMO_PROJECT)
 test_data_at = run.use_artifact(TEST_DATA_AT) 
 test_dir = test_data_at.download()
 
@@ -75,19 +55,14 @@ model_load_path = "/".join(model_path.split("/")[:-1])
 # load model via fastai
 unet_model = load_learner(Path(model_load_path), model_file)
 
-print("WORKING!")
-#-----------------------
-
 # download test images so they are available locally
 test_images_path =  Path(test_dir + "/images/")
-print("TEST: ", test_images_path)
 
 # create test dataset in fastai
 test_data = ImageList.from_folder(test_images_path)
 unet_model.data.add_test(test_data, tfms=None, tfm_y=False)
 
 test_batch = unet_model.data.test_ds
-print("TEST: ", len(test_batch))
 test_ids = unet_model.data.test_ds.items
 
 # TODO: type = predictions, better naming conventions
@@ -110,7 +85,7 @@ for i, img in enumerate(test_batch):
    test_id = str(test_ids[i]).split("/")[-1].split(".")[0]
 
    # create prediction mask and log to table
-   row = [str(test_id), wb_mask(bg_image, pred_mask=prediction_mask), wandb.Image(prediction_mask)]
+   row = [str(test_id), util.wb_mask(bg_image, pred_mask=prediction_mask), wandb.Image(prediction_mask)]
    test_table.add_data(*row)
    #model_test_table.add_data(*row)
 
