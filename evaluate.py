@@ -16,14 +16,21 @@ def per_category_metrics(ious, fps, fns):
   for metric, category in zip(["iou", "fps", "fns"], [ious, fps, fns]):
     for category_name, ids in util.CITYSCAPE_IDS.items():
       category_metric = np.mean([category[class_id] for class_id in ids])
-      metrics[metric + "_" + category_name] = category_metric
+      metrics["cat_"+metric + "_" + category_name] = category_metric
+
+  # average all category
+  category_average = np.mean([v for v in metrics.values()])
+  metrics["mean_category_iou"] = category_average
   return metrics
 
-# ious is 50 rows of 19 columns
+# ious is util.NUM_EXAMPLES rows of 19 columns
 def mean_metrics(ious, fps, fns):
   # mean per class ious
   ious_np = np.mean(ious, axis=0)
-  
+ 
+  # per-class mean iou
+  per_class_mean_iou = np.mean(ious_np)
+
   fps_floats = np.array(fps)
   norm_fps = fps_floats / util.TOTAL_PIXELS
   # mean normalized per class fps
@@ -32,7 +39,7 @@ def mean_metrics(ious, fps, fns):
   norm_fns = fns_floats / util.TOTAL_PIXELS
   mean_norm_fns = np.mean(norm_fns, axis=0)
 
-  return ious_np, mean_norm_fps, mean_norm_fns
+  return per_class_mean_iou, ious_np, mean_norm_fps, mean_norm_fns
   
 
 # 2D version
@@ -91,9 +98,9 @@ run = wandb.init(project=util.ANSWER_PROJECT, job_type="evaluate")
 predictions_at = run.use_artifact("{}/test_predictions:latest".format(util.SUBMIT_PROJECT))
 guess_table = predictions_at.get("test_results")
 
-guess_ids = np.array([guess_table.data[i][0] for i in range(50)])
-guess_images = np.array([np.array(guess_table.data[i][2]._image) for i in range(50)])
-guess_pretty = [guess_table.data[i][1] for i in range(50)]
+guess_ids = np.array([guess_table.data[i][0] for i in range(util.NUM_EXAMPLES)])
+guess_images = np.array([np.array(guess_table.data[i][2]._image) for i in range(util.NUM_EXAMPLES)])
+guess_pretty = [guess_table.data[i][1] for i in range(util.NUM_EXAMPLES)]
 
 guess = pd.DataFrame({'id' : guess_ids, "guess": [i for i in range(len(guess_images))]}) 
 
@@ -101,9 +108,9 @@ guess = pd.DataFrame({'id' : guess_ids, "guess": [i for i in range(len(guess_ima
 answers_at = run.use_artifact("{}/answer_key:latest".format(util.ANSWER_PROJECT))
 true_table = answers_at.get("answer_key")
 
-true_ids = np.array([true_table.data[i][0] for i in range(50)])
-true_images = np.array([np.array(true_table.data[i][3]._image) for i in range(50)])
-true_pretty = [true_table.data[i][2] for i in range(50)]
+true_ids = np.array([true_table.data[i][0] for i in range(util.NUM_EXAMPLES)])
+true_images = np.array([np.array(true_table.data[i][3]._image) for i in range(util.NUM_EXAMPLES)])
+true_pretty = [true_table.data[i][2] for i in range(util.NUM_EXAMPLES)]
 
 truth = pd.DataFrame({'id' : true_ids, "truth" : [i for i in range(len(true_images))]})
 
@@ -112,16 +119,6 @@ results = guess.join(truth, lsuffix="_guess", rsuffix="_truth")
 # now log a final table
 columns=["id", "prediction", "ground_truth"]
 columns.extend(["overall IOU", "false positive", "false negative"])
-
-#eval_table = wandb.Table(columns=columns) #["id", "prediction", "ground_truth", "iou"])
-
-# OK now they are joined
-#for index, row in results.iterrows():
-  #s = iou_flat(guess_images[row["guess"]], true_images[row["truth"]], 0)
-#  scores = score_masks(guess_images[row["guess"]], true_images[row["truth"]])
-  # all the scores per class
-#  eval_table.add_data(row["id_truth"], guess_pretty[row["guess"]], true_pretty[row["truth"]], scores["net_iou"], scores["net_fp"], scores["net_fn"])
-#  wandb.log({"net_fp" : scores["net_fp"], "net_fn" : scores["net_fn"], "net_iou" : scores["net_iou"]})
 
 ious = []
 fps = []
@@ -154,37 +151,20 @@ for index, row in results.iterrows():
 # - report mean across all ious
 # - report mean across all fps and fns (TODO: normalize?)
 # - report per-category mean iou
-mean_ious, mean_fps, mean_fns = mean_metrics(ious, fps, fns)
+per_class_mean_iou, mean_ious, mean_fps, mean_fns = mean_metrics(ious, fps, fns)
 iou_d = { "iou_" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_ious)}
 fps_d = { "fps_" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_fps)}
 fns_d = { "fns_" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_fns)}
 wandb.log(iou_d)
 wandb.log(fps_d)
 wandb.log(fns_d)
-# TODO convert to dict
-# wandb.log
-# then we'll do per-category later
+wandb.log({"mean_class_iou" : per_class_mean_iou})
+
 per_category = per_category_metrics(mean_ious, mean_fps, mean_fns)
-print(per_category)
 wandb.log(per_category)
 
 results_at = wandb.Artifact("eval_results", type="results")
-#results_at.add(eval_table, "eval_results")
 results_at.add(full_num_table, "full_num_results")
 run.log_artifact(results_at)
-
-# join guess_images and true_images by id
-# score each pair
-# log new 
-
-#print(scores)
-## 
-  
-
-# eval table
-#eval_table = wandb.JoinedTable(guess_table, truth_table, "id")
-
-# compute eval_table
-#print("EXAMPLE")
-#print(eval_table.data[0])
+run.finish()
 
