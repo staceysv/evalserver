@@ -1,27 +1,37 @@
 # utils and shared variables
 import wandb
 
-# projects
+# wandb project names used to separate ground truth labels
+# and participant submissions. Participants view the Demo
+# project and write their predictions to the Submit project.
+# Benchmark owners evaluate and organize all submissions in
+# the Answer project.
 
 DEMO_PROJECT = "evalserve"
 ANSWER_PROJECT = "answers_evalserve"
 SUBMIT_PROJECT = "evalserve_predict"
+
+# total images to log (for demo purposes)
 NUM_EXAMPLES = 50
 
 # total number of pixels in each training image
 TOTAL_PIXELS = float(720*1280)
 
-# classes
+# classes from the Berkeley Deep Drive 100K dataset
+# https://bdd-data.berkeley.edu/
 BDD_CLASSES = [
     'road', 'sidewalk', 'building', 'wall', 'fence', 'pole', 'traffic light',
     'traffic sign', 'vegetation', 'terrain', 'sky', 'person', 'rider', 'car',
     'truck', 'bus', 'train', 'motorcycle', 'bicycle', 'void'
 ]
 BDD_IDS = list(range(len(BDD_CLASSES) - 1)) + [255]
+
+# convenience wrapper for wandb semantic segmentation visualization
 class_set = wandb.Classes([{'name': name, 'id': id}
                            for name, id in zip(BDD_CLASSES, BDD_IDS)])
 
-CS_CATEGORIES = {
+# Cityscapes category definitons (which classes are in which category)
+CITYSCAPES_CATEGORIES = {
   "flat" : ["road", "sidewalk"],
   "human" : ["person", "rider"],
   "vehicle" : ["car", "bus", "truck", "motorcycle", "bicycle", "train"],
@@ -41,8 +51,6 @@ CITYSCAPE_IDS = {
   "sky" : [10] 
 }
 
-
-
 # wrapper for logging masks to W&B
 def wb_mask(bg_img, pred_mask=[], true_mask=[]):
   masks = {}
@@ -51,5 +59,4 @@ def wb_mask(bg_img, pred_mask=[], true_mask=[]):
   if len(true_mask) > 0:
     masks["ground truth"] = {"mask_data" : true_mask}
   return wandb.Image(bg_img, classes=class_set, masks=masks)
-
 
