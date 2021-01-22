@@ -1,8 +1,29 @@
-# - run by dataset owner
-# - needs a type=predictions artifact and a type=test_dataset_with_label artifact
-# - log per-image metrics, esp total false positive and false negative pixels
-# - run summary metrics, could be set on run or in metadata
-# - evaluate everything for which we don't find a job_type = evaluate )
+# evaluate.py
+# --------------
+# The dataset owner runs this script to evaluate a candidate model's performance
+# by comparing the model's predictions to the ground truth labels.
+# Given
+# - a type=predictions Artifact from a participant's model inference ("test" type job)
+# - a type=labeled_test_dataset Artifact from the Answers project (containing the correct
+#   labels and only visible to the benchmark/dataset owner)
+# compute and log several metrics at several levels of granularity.
+# The metrics include:
+# - iou: intersection over union, or TP / TP + FP + FN summed over all semantic classes except for "void"  
+# - fps: false positive pixels where the model identified an incorrect class
+# - fns: false negative pixels where the model failed to identify a correct class
+#   Note: sometimes the pixels are normalized for faster relative comparison.
+# 
+# These metrics are logged on several levels:
+# - per individual image in the test dataset
+# - per individual semantic class ("road", "car", "person", "building", etc)
+# - per category ("vehicle" = "car" or "bus" or "truck" or "bicycle"...)
+# - average across all images, all classes, or all categories.
+
+# The per-image metrics are logged to a dsviz table inside of artifacts, and the
+# aggregate metrics are logged to the wandb run summary.
+# 
+# Note: this script could be croned to execute for any "predictions" artifact in the Submit project
+# which is not input to a further run of job_type=evaluate.
 
 import numpy as np
 import os
@@ -11,19 +32,23 @@ from PIL import Image
 import util
 import wandb
 
+# Given the per-class metrics, compute the per-category metrics
+# (aggregate over the component classes, e.g. category human = class person and class rider)
 def per_category_metrics(ious, fps, fns):
   metrics = {}
-  for metric, category in zip(["iou", "fps", "fns"], [ious, fps, fns]):
+  for metric_name, metric_type in zip(["iou", "fps", "fns"], [ious, fps, fns]):
     for category_name, ids in util.CITYSCAPE_IDS.items():
-      category_metric = np.mean([category[class_id] for class_id in ids])
-      metrics["cat_"+metric + "_" + category_name] = category_metric
+      category_metric = np.mean([metric_type[class_id] for class_id in ids])
+      metrics["cat_" + metric_name + "_" + category_name] = category_metric
 
-  # average all category
-  category_average = np.mean([v for v in metrics.values()])
-  metrics["mean_category_iou"] = category_average
+  # average across categories, per metric
+  for metric in ["cat_iou", "cat_fps", "cat_fns"]:
+    metric_vals = [v for k, v in metrics.items() if k.startswith(metric)]
+    metrics["mean_" + metric] = np.mean(metric_vals)
+
   return metrics
 
-# ious is util.NUM_EXAMPLES rows of 19 columns
+# ious is util.NUM_EXAMPLES rows of len(util.BDD_CLASSES) - 1 columns
 def mean_metrics(ious, fps, fns):
   # mean per class ious
   ious_np = np.mean(ious, axis=0)
@@ -40,7 +65,6 @@ def mean_metrics(ious, fps, fns):
   mean_norm_fns = np.mean(norm_fns, axis=0)
 
   return per_class_mean_iou, ious_np, mean_norm_fps, mean_norm_fns
-  
 
 # 2D version
 # return false pos and false neg per class
@@ -68,7 +92,7 @@ def pixel_count(guess, truth):
   net_fn = 0
   net_tp = 0
   # NOTE: void class doesn't contribute
-  for class_id in range(19):
+  for class_id in range(len(util.BDD_CLASSES) - 1):
     fp = ((guess == class_id) & (truth != class_id)).sum(axis=(0,1))
     fn = ((guess != class_id) & (truth == class_id)).sum(axis=(0,1))
     tp = ((guess == class_id) & (truth == class_id)).sum(axis=(0,1))
@@ -87,10 +111,6 @@ def pixel_count(guess, truth):
 def score_masks(mask_guess, mask_truth):
   guess = mask_guess.repeat(2, axis=0).repeat(2, axis=1)
   return pixel_count(guess, mask_truth)
-
-
-def iou_3D(mask_a, mask_b, class_id):
-    return np.nan_to_num(((mask_a == class_id) & (mask_b == class_id)).sum(axis=(1,2)) / ((mask_a == class_id) | (mask_b == class_id)).sum(axis=(1,2)), 0, 0, 0)
 
 run = wandb.init(project=util.ANSWER_PROJECT, job_type="evaluate")
 
@@ -129,17 +149,17 @@ columns.extend(["fn_" + s for s in util.BDD_CLASSES[:-1]])
 columns.extend(["fp_" + s for s in util.BDD_CLASSES[:-1]])
 full_num_table = wandb.Table(columns=columns)
 for index, row in results.iterrows():
-  #s = iou_flat(guess_images[row["guess"]], true_images[row["truth"]], 0)
+  
   scores = score_masks(guess_images[row["guess"]], true_images[row["truth"]])
   # all the scores per class
   r = [row["id_truth"], guess_pretty[row["guess"]], true_pretty[row["truth"]], scores["net_iou"], scores["net_fp"], scores["net_fn"]]
-  class_ious = [scores[class_id]["iou"] for class_id in range(19)]
+  class_ious = [scores[class_id]["iou"] for class_id in range(len(util.BDD_CLASSES) - 1)]
   ious.append(class_ious)
   r.extend(class_ious)
-  class_fns = [scores[class_id]["fn"] for class_id in range(19)]
+  class_fns = [scores[class_id]["fn"] for class_id in range(len(util.BDD_CLASSES) - 1)]
   fns.append(class_fns)
   r.extend(class_fns)
-  class_fps = [scores[class_id]["fp"] for class_id in range(19)]
+  class_fps = [scores[class_id]["fp"] for class_id in range(len(util.BDD_CLASSES) - 1)]
   fps.append(class_fps)
   r.extend(class_fps)
   
@@ -155,13 +175,13 @@ per_class_mean_iou, mean_ious, mean_fps, mean_fns = mean_metrics(ious, fps, fns)
 iou_d = { "iou_" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_ious)}
 fps_d = { "fps_" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_fps)}
 fns_d = { "fns_" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_fns)}
-wandb.log(iou_d)
-wandb.log(fps_d)
-wandb.log(fns_d)
+wandb.log({"iou_class" : iou_d})
+wandb.log({"fps_class" : fps_d})
+wandb.log({"fns_class" : fns_d})
 wandb.log({"mean_class_iou" : per_class_mean_iou})
 
 per_category = per_category_metrics(mean_ious, mean_fps, mean_fns)
-wandb.log(per_category)
+wandb.log({"category" : per_category})
 
 results_at = wandb.Artifact("eval_results", type="results")
 results_at.add(full_num_table, "full_num_results")
