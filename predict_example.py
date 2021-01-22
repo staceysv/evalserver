@@ -1,11 +1,18 @@
-# run by the model buuilder
-# given a test_dataset artifact, and a model artifact
-# evaluate model and upload predictions as joined table, type = predictions
-# - easily plug in own model evaluation code
-# steps:
-# - download data
-# - iterate
-# - construct prredictions table
+# predict_example.py
+#----------------------------
+# The model builder (benchmark participant) runs this script.
+# Given
+# - a type=test_dataset Artifact containing the test images to be labeled and
+# - a type=model Artifact containing a trained model (for convenience, assuming the
+#   participant has already logged the corresponding training run to wandb)
+# evaluate the model on the test data and upload
+# - a type=predictions Artifact containing the model's predictions on the test data.
+#
+# Running model inference is factored out into a separate module
+# for convenience, and inference.py implements "test_model", which takes in
+# - the test_dataset Artifact
+# - a table with the expected format of predictions (image id, visualized prediction mask,
+#   and raw prediction mask) to be filled out using the model's predictions
 
 import numpy as np
 import os
@@ -13,84 +20,30 @@ from PIL import Image
 import util
 import wandb
 
-from pathlib import Path
-from fastai.vision import *
-from fastai.callbacks.hooks import *
-from fastai.callback import Callback
+import inference
+# fastai gymnastics: this needs to be defined in the main namespace
+# to properly load a saved model
+from inference import iou
 
-# TODO:probably don't need these
-import json
-from wandb.fastai import WandbCallback
-from functools import partialmethod
-
-TRAINING_PROJECT = "dsviz-segment"
-MODEL_NAME = "resnet18"
-
-SMOOTH = 1e-6
-# IOU loss function
-def iou(input, target):
-    target = target.squeeze(1)  # BATCH x 1 x H x W => BATCH x H x W
-    intersection = (input.argmax(dim=1) & target).float().sum((1, 2))  # Will be zero if Truth=0 or Prediction=0
-    union = (input.argmax(dim=1) | target).float().sum((1, 2))         # Will be zero if both are 0
-    iou = (intersection + SMOOTH) / (union + SMOOTH)  # We smooth our division to avoid 0/0
-    return iou.mean()
-
-
+# intialize a test run to the Submit project for the benchmark
 run = wandb.init(project=util.SUBMIT_PROJECT, job_type="test")
 
-# get test data
+# get the latest version of the test data from the Demo project
 TEST_DATA_AT = "{}/test_data:latest".format(util.DEMO_PROJECT)
-test_data_at = run.use_artifact(TEST_DATA_AT) 
-test_dir = test_data_at.download()
+test_data_artifact = run.use_artifact(TEST_DATA_AT)
 
-# get model...? one we already trained
-MODEL_AT = "{}/{}:latest".format(TRAINING_PROJECT, MODEL_NAME)
-model_at = run.use_artifact(MODEL_AT)
-model_path = model_at.get_path(MODEL_NAME).download()
-
-# evaluate model
-# a bit of path gymnastics for fastai
-model_file = model_path.split("/")[-1]
-model_load_path = "/".join(model_path.split("/")[:-1])
-# load model via fastai
-unet_model = load_learner(Path(model_load_path), model_file)
-
-# download test images so they are available locally
-test_images_path =  Path(test_dir + "/images/")
-
-# create test dataset in fastai
-test_data = ImageList.from_folder(test_images_path)
-unet_model.data.add_test(test_data, tfms=None, tfm_y=False)
-
-test_batch = unet_model.data.test_ds
-test_ids = unet_model.data.test_ds.items
-
-# TODO: type = predictions, better naming conventions
-test_res_at = wandb.Artifact("test_predictions", type="predictions")
+# create a submission table with the expected fields:
+# - test image id
+# - prediction image as a wandb mask for best visualization
+#   (this is optional but much easier to read than the raw mask)
+# - raw mask (no wandb mask, just the predicted labels) 
 test_table = wandb.Table(columns=["id", "prediction", "raw_mask"])
 
-# store predictions across all resnet model variants as one artifact
-#model_test_at = wandb.Artifact("resnet_results", "model_test")
-#model_test_table = wandb.Table(columns=["id", "prediction"])
+# fill table with predictions
+result_table = inference.test_model(run, test_data_artifact, test_table)
 
-for i, img in enumerate(test_batch):
-   # log raw image as array
-   orig_image = img[0]
-   bg_image = image2np(orig_image.data*255).astype(np.uint8)
-
-   # our prediction
-   prediction = unet_model.predict(orig_image)[0]
-   print("pred: ", prediction)
-   prediction_mask = image2np(prediction.data).astype(np.uint8)
-   test_id = str(test_ids[i]).split("/")[-1].split(".")[0]
-
-   # create prediction mask and log to table
-   row = [str(test_id), util.wb_mask(bg_image, pred_mask=prediction_mask), wandb.Image(prediction_mask)]
-   test_table.add_data(*row)
-   #model_test_table.add_data(*row)
-
-print("Saving data to WandB...")
-test_res_at.add(test_table, "test_results")
+# log filled result table to artifact
+test_res_at = wandb.Artifact("test_predictions", type="predictions")
+test_res_at.add(result_table, "test_results")
 run.log_artifact(test_res_at)
-#model_test_at.add(model_test_table, "model_test_results")
-#run.log_artifact(model_test_at)
+run.finish()
