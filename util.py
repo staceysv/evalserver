@@ -1,5 +1,6 @@
 # utils and shared variables
 import wandb
+import numpy as np
 
 # wandb project names used to separate ground truth labels
 # and participant submissions. Participants view the Demo
@@ -60,3 +61,20 @@ def wb_mask(bg_img, pred_mask=[], true_mask=[]):
     masks["ground truth"] = {"mask_data" : true_mask}
   return wandb.Image(bg_img, classes=class_set, masks=masks)
 
+# smooth fractions to avoid division by zero and always return the same type
+def smooth(num, denom):
+  if np.isclose(denom, 0):
+    return np.nan_to_num(0.0, 0.0, 0.0, 0.0)
+  else:
+    return np.nan_to_num(num / denom, 0.0, 0.0, 0.0)
+
+# generic IOU for prediction masks and a given class id
+def iou_2D(mask_guess, mask_b, class_id):
+    # 4x upsample the guessed mask because of the size reduction in training
+    # mask_a = mask_guess.repeat(2, axis=0).repeat(2, axis=1)
+    intersection = np.nan_to_num(((mask_a == class_id) & (mask_b == class_id)).sum(axis=(0,1)), 0, 0, 0)
+    union = np.nan_to_num(((mask_a == class_id) | (mask_b == class_id)).sum(axis=(0,1)), 0, 0, 0)
+    if np.isclose(union, 0):
+      return np.nan_to_num(0.0, 0.0, 0.0, 0.0)
+    else:
+      return np.nan_to_num(intersection / union, 0.0, 0.0, 0.0)
