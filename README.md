@@ -6,6 +6,30 @@ At a high level, the workflow is:
 - participants test their models on the test dataset and submit their model's predictions
 - the owner evaluates these predictions against the correct answers and saves performance metrics (following [Cityscapes](https://www.cityscapes-dataset.com/benchmarks/#scene-labeling-task)) across the submissions
 
+# Project layout
+
+## Answer project
+
+The Answer project is the core project viewable only to the benchmark owners. This contains the ground truth labels (answer key) for the test dataset, stores evaluation metrics for all the participant submissions, and contains dashboards for comparing the candidate models.
+* [example evaluation](https://wandb.ai/stacey/answers_evalserve/artifacts/results/eval_results/8c1729d783f95e3d037a/files/full_num_results.table.json)
+* [answer project workspace](https://wandb.ai/stacey/answers_evalserve/) 
+
+## Demo project
+
+The Demo project is the open project where any participant can view the test dataset (without labels) and any benchmark details.
+* [test dataset ids and images](https://wandb.ai/stacey/evalserve/artifacts/test_dataset/test_data/67ca374b1d544281fec3/files/train_data.table.json)
+* [demo project workspace](https://wandb.ai/stacey/evalserve/)
+
+## Submit project
+
+The Submit project is where participants submit their candidate models and predictions. To keep submissions private and not visible to all other participants, a new Submit project can be created for every benchmark participant team.
+* [example submission table](https://wandb.ai/stacey/evalserve_predict/artifacts/predictions/test_predictions/3b6d899d294d736c3684/files/test_results.table.json)
+* [submit project workspace](https://wandb.ai/stacey/evalserve_predict/)
+
+## Participants' training projects
+
+Participants can optionally log their training to W&B. Here is [one example](https://wandb.ai/stacey/dsviz-demo).
+
 # Scripts
 
 ## upload_test_data.py
