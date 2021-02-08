@@ -8,9 +8,9 @@ import numpy as np
 # Benchmark owners evaluate and organize all submissions in
 # the Answer project.
 
-DEMO_PROJECT = "evalserve"
-ANSWER_PROJECT = "answers_evalserve"
-SUBMIT_PROJECT = "evalserve_predict"
+DEMO_PROJECT = "evalserver_test"
+ANSWER_PROJECT = "evalserver_answers"
+ENTRY_PROJECT = "evalserver_entry"
 
 # total images to log (for demo purposes)
 NUM_EXAMPLES = 50

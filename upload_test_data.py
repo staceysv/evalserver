@@ -50,16 +50,16 @@ for idx, image in enumerate(images):
   answers_at.add_file(label_file, os.path.join("labels", train_id + "_train_id.png"))
 
 # add tables to artifacts
-demo_at.add(demo_table, "train_data")
+demo_at.add(demo_table, "test_data")
 answers_at.add(answer_table, "answer_key")
 
 # upload the unlabeled test data to the Demo project
-run = wandb.init(project=util.DEMO_PROJECT, job_type="upload")
+run = wandb.init(project=util.DEMO_PROJECT, job_type="upload_test_data")
 run.log_artifact(demo_at)
 run.finish()
 
 # upload the labeled test data to the Answer project
-run = wandb.init(project=util.ANSWER_PROJECT, job_type="upload")
+run = wandb.init(project=util.ANSWER_PROJECT, job_type="upload_test_data")
 run.log_artifact(answers_at)
 run.finish()
 
