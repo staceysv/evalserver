@@ -23,7 +23,7 @@ The Demo project is the open project where any participant can view the test dat
 
 The Entry project is where participants submit their candidate models and predictions. To keep entries private and not visible to all the other participants, a new Entry project can be created for every benchmark participant team. For simplicity in the current setup, all participants share one Entry project, and each entry is idenitified by a "team_name" and optional "entry_name" (to better differentiate or more easily refer to their model varitants). We have example submissions from Ada, Bob, Charlie, etc. The submissions are versioned by team name, so every submission attempt by the same team creates a new version of the "entry_predictions" artifact, corresponding to that team's latest/presumably best predictions. To prevent different teams from seeing each others' entries and attempts, this evalserver could be set up with one separte W&B project per participating team.
 * [example entry with strong predictions](https://wandb.ai/stacey/evalserver_entry/artifacts/entry_predictions/entry_Daenerys/7328219b584e0361a99a/files/test_results.table.json)
-* [example entry with two attempts and weak predictions](https://wandb.ai/stacey/evalserver_entry/artifacts/entry_predictions/entry_Ada/764c8a1319ba8922557a/files/test_results.table.json)
+* [example entry with two attempts and weaker predictions](https://wandb.ai/stacey/evalserver_entry/artifacts/entry_predictions/entry_Ada/764c8a1319ba8922557a/files/test_results.table.json)
 * [entry project workspace](https://wandb.ai/stacey/evalserve_entry/)
 
 ## Participants' training projects
@@ -38,31 +38,46 @@ Benchmark owners run this to create two artifacts: the [unlabeled test data](htt
 
 ## predict_example.py
 
-Participants run this to load in the Demo project test data and a candidate model to test (factored out as `test_model()` in `inference.py` to enable switching easily between many trained models). This logs predictions to a [separate Entry project](https://wandb.ai/stacey/segment_dsviz), which is shared across teams for simplicity in this example. In general, a new Entry project could be created for each participating team, accessible to the owner and the specific team only, so that different teams do not see each others' submissions.
+Participants run this to load in the Demo project test data and a candidate model to test:
+```
+predict_example.py --team_name Stacey --model_name resnet34_baseline
+```
+The model loading part is factored out as `test_model()` in `inference.py` to enable switching easily between many trained models (and simulated teams, in my case: Ada, Bob, Charlie...). This script logs the candidate model's predictions on the test set to a [separate Entry project](https://wandb.ai/stacey/evalserver_entry). A new Entry project could be created for each participating team, accessible to the owner and the specific team only, so that different teams do not see each other's submissions. In this example, I use a single shared Entry project with simulated teams. Each subsequent entry for a given team name creates a new version of the team's predictions, assuming this is the latest/best attempt for that team. 
 
 ## evaluate.py
 
-Benchmark owners run this to evaluate model predictions in the Entry project and compute final performance metrics, stored in the Answer project by default. These evaluation metrics are easily compared within the Answer project and only visible to benchmark/dataset owners. If/when the benchmark owners are ready, these can be shared with all participants via the Demo project. Another option is for each team's performance to be visible to that team in their Entry project without including the ground truth labels. Note: in this dataset and example, it's very easy for humans to see the correct answer/approximate model performance by looking at any predicted regions on _any_ image, since the predictions and ground truth are generally easy to interpret for humans (e.g. clearly this object should be a car and not a bus, this pedestrian was missed, etc). 
+Benchmark owners run this to evaluate team's model predictions as submitted to the Entry project and to compute final performance metrics:
+```
+evaluate.py --team_name Stacey [--log_answer_images]
+```
+
+### Automatically detecting and evaluating new entries
+This evaluation script can easily be automated to periodically evaluate any recently submitted models. For example, a cron job could run every N hours to check if there are any new submissions: any new "entry_[TEAM_NAME]" Artifact versions of Artifact type "entry_preditions" in an Entry project which do not yet have a matching version in the Answer project (no "eval_[TEAM_NAME]" Artifact version of Artifact type "results"). This job could then evaluate any new "entry_prediction" versions and log the corresponding evaluation "results" Artifact to the Answer project.
+
+### Optionally releasing the ground truth labels 
+
+These evaluation metrics are easily compared across entries within the Answer project, where all entries are only visible to the owners/administrators of thebbenchmark (and not the participants). If/when the benchmark owners are ready, the correct answers can be shared with all participants via the Demo project. Another option is for each team's performance metrics to be visible to that team in their Entry project without including the ground truth labels. Note that with this dataset, model performance on driving scenes is fairly easy for humans to approximate by looking at region predictions on _any_ image, even if the numerical ground truth is not returned (e.g. if the participants visualize their own models' predictions in W&B, they'll be able to tell at a glance where the model is confusing trucks and buses, or pedestrians and cyclists, etc).
 
 # Metrics
 
 We compute and log several metric types at several levels of granularity.
 The metric types include:
-* iou: intersection over union, or TP / TP + FP + FN summed over all semantic classes except for "void"  
-* fps: false positive pixels where the model identified an incorrect class
-* fns: false negative pixels where the model failed to identify a correct class
-Note: beyond the per-image level, the pixels are normalized for faster relative comparison when looking at tables of results.
+* **iou**: intersection over union, or TP / (TP + FP + FN) summed over all semantic classes except for "void"  
+* **fps**: false positive pixels, where the model identified an incorrect class
+* **fns**: false negative pixels, where the model failed to identify a correct class
+Note: beyond the per-image level, the pixel counts are normalized (by the total pixel count for the image) for faster relative comparison when looking at tables of numerical results.
 
-The levels of granularity include:
-* per individual image in the test dataset: logged to dataset visualization table in the evaluation artifact of the Answer project
-* per individual semantic class ("road", "car", "person", "building", etc): logged to evaluation run summary, nested under metric type
-* per category ("vehicle" = "car" or "bus" or "truck" or "bicycle"...): logged to evaluation run summary, nested under "category"
-* average across all images, all classes, or all categories: logged to evaluation run summary with "mean_" prefix
+The levels of granularity for each metric include:
+* **per image**: computed for each individual image in the test dataset; logged to the "eval_results" table in the Answer project: [example](https://wandb.ai/stacey/evalserver_answers/artifacts/results/eval_Daenerys/5efc7ec72c533def2f81/files/eval_results.table.json) 
+* **per semantic class** ("road", "car", "person", etc): computed across all images in the test dataset; logged to each [evaluation run summary](https://wandb.ai/stacey/evalserver_answers/runs/22ojbylg/overview) and [run page](https://wandb.ai/stacey/evalserver_answers/runs/22ojbylg?workspace=user-stacey), nested unbby metric type
+* **per semantic category** ("vehicle" = "car" or "bus" or "truck" or "bicycle"...): logged to each [evaluation run summary](https://wandb.ai/stacey/evalserver_answers/runs/22ojbylg/overview) and [run page](https://wandb.ai/stacey/evalserver_answers/runs/22ojbylg), nested under "category".
+* **mean across all classes or all categories**: logged to [evaluation run summary](https://wandb.ai/stacey/evalserver_answers/runs/22ojbylg/overview) and [run page](https://wandb.ai/stacey/evalserver_answers/runs/22ojbylg) with "mean_" prefix
 
-The per-image metrics are logged to a dataset visualization table inside of the artifacts view in the Answer project, and the aggregate metrics are logged to the wandb run summary.
+The per-image metrics are logged to a dataset visualization table inside of the artifacts view in the Answer project, and the aggregate metrics are logged to each evaluation run's summary and aggregated in the [main workspace of the Answer project](https://wandb.ai/stacey/evalserver_answers).
 
 # Visualization links
 
-* [Prediction project](https://wandb.ai/stacey/evalserve_predict)
-* [Answer project to compare models](https://wandb.ai/stacey/answers_evalserve)
-* [Best model predictions so far](https://wandb.ai/stacey/answers_evalserve/artifacts/results/eval_results/8c1729d783f95e3d037a)
+* [Main workspace to compare candidate model performance](https://wandb.ai/stacey/evalserver_answers)
+* [Best model predictions so far](https://wandb.ai/stacey/evalserver_answers/artifacts/results/eval_Daenerys/5efc7ec72c533def2f81/files/eval_results.table.json)
+* [Benchmark participant entries](https://wandb.ai/stacey/evalserver_entry)
+* [Benchmark test data for participants](https://wandb.ai/stacey/evalserver_test/artifacts/test_dataset/test_data/63753dbf2199578d8fcb/files/test_data.table.json)
