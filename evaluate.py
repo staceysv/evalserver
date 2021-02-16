@@ -24,7 +24,7 @@
 # 
 # Note: this script could be croned to execute for any "predictions" artifact in the Submit project
 # which is not input to a further run of job_type=evaluate.
-
+import argparse
 import numpy as np
 import os
 import pandas as pd
@@ -39,11 +39,11 @@ def per_category_metrics(ious, fps, fns):
   for metric_name, metric_type in zip(["iou", "fps", "fns"], [ious, fps, fns]):
     for category_name, ids in util.CITYSCAPE_IDS.items():
       category_metric = np.mean([metric_type[class_id] for class_id in ids])
-      metrics["cat_" + metric_name + "_" + category_name] = category_metric
+      metrics["category/" + metric_name + "_" + category_name] = category_metric
   # average across categories, per metric
-  for metric in ["cat_iou", "cat_fps", "cat_fns"]:
+  for metric in ["category/iou", "category/fps", "category/fns"]:
     metric_vals = [v for k, v in metrics.items() if k.startswith(metric)]
-    metrics["mean_" + metric] = np.mean(metric_vals)
+    metrics["mean_category/" + metric.split("/")[1]] = np.mean(metric_vals)
   return metrics
 
 # compute the mean across each metric type, within and across classes,
@@ -86,6 +86,17 @@ def pixel_count(guess, truth):
     net_fp += fp
     net_fn += fn
     net_tp += tp
+  for category_name, category_ids in util.CITYSCAPE_IDS.items():
+    sum_fp = 0
+    sum_fn = 0
+    sum_tp = 0
+    for cat_id in category_ids:
+      sum_fp += iou_scores[cat_id]["fp"]
+      sum_fn += iou_scores[cat_id]["fn"]
+      sum_tp += iou_scores[cat_id]["tp"]
+    cat_iou = util.smooth(float(sum_tp), float(sum_tp + sum_fp + sum_fn))
+    iou_scores[category_name] = {"fp" : sum_fp, "fn" : sum_fn, "iou" : cat_iou}
+ 
   # record "net" metrics across all classes for this image
   net_iou = util.smooth(float(net_tp), float(net_tp + net_fp + net_fn))
   iou_scores["net_iou"] = net_iou
@@ -101,83 +112,120 @@ def score_masks(mask_guess, mask_truth):
   guess = mask_guess.repeat(2, axis=0).repeat(2, axis=1)
   return pixel_count(guess, mask_truth)
 
-# create a new evalution run in the Answer project
-run = wandb.init(project=util.ANSWER_PROJECT, job_type="evaluate")
+def evaluate_model(args):
+  # by default, only log labeled test images (the benchmark ground truth/
+  # the corrrect answers) to the private Answer project, which is only
+  # visible to the benchmark owners
+  LOG_PROJECT = util.ANSWER_PROJECT
+  if args.log_answer_images:
+    # if this flag is set, log the labeled test images to the Demo project
+    # (which all participants can see)
+    LOG_PROJECT = util.DEMO_PROJECT
+  # create a new evalution run in the Answer project (default, invisible to participants)
+  # or the Demo project (optional, would make all submissions and correct answers visble to everyone)
+  run = wandb.init(project=LOG_PROJECT, job_type="evaluate")
 
-# Guess table / Predictions Artifact
-# fetch the participant's predictions from their Submit project
-predictions_at = run.use_artifact("{}/test_predictions:latest".format(util.SUBMIT_PROJECT))
-guess_table = predictions_at.get("test_results")
+  # Guess table / Predictions Artifact
+  # fetch the participant's predictions from their Entry project
+  run.config.team_name = args.team_name
+  predictions_at = run.use_artifact("{}/entry_{}:latest".format(util.ENTRY_PROJECT, args.team_name))
+  guess_table = predictions_at.get("test_results")
 
-# extract relevant columns
-guess_ids = np.array([guess_table.data[i][0] for i in range(util.NUM_EXAMPLES)])
-guess_images = np.array([np.array(guess_table.data[i][2]._image) for i in range(util.NUM_EXAMPLES)])
-guess_wb_masks = [guess_table.data[i][1] for i in range(util.NUM_EXAMPLES)]
+  # extract relevant columns
+  guess_ids = np.array([guess_table.data[i][0] for i in range(util.NUM_EXAMPLES)])
+  guess_images = np.array([np.array(guess_table.data[i][2]._image) for i in range(util.NUM_EXAMPLES)])
+  guess_wb_masks = [guess_table.data[i][1] for i in range(util.NUM_EXAMPLES)]
 
-# join ids to image index
-guess = pd.DataFrame({'id' : guess_ids, "guess": [i for i in range(len(guess_images))]}) 
+  # join ids to image index
+  guess = pd.DataFrame({'id' : guess_ids, "guess": [i for i in range(len(guess_images))]}) 
 
-# Answer table / Labeled test dataset Artifact
-# fetch the latest version of the ground truth labels
-answers_at = run.use_artifact("{}/answer_key:latest".format(util.ANSWER_PROJECT))
-true_table = answers_at.get("answer_key")
+  # Answer table / Labeled test dataset Artifact
+  # fetch the latest version of the ground truth labels
+  answers_at = run.use_artifact("{}/answer_key:latest".format(util.ANSWER_PROJECT))
+  true_table = answers_at.get("answer_key")
 
-# extract relevant columns
-true_ids = np.array([true_table.data[i][0] for i in range(util.NUM_EXAMPLES)])
-true_images = np.array([np.array(true_table.data[i][3]._image) for i in range(util.NUM_EXAMPLES)])
-true_wb_masks = [true_table.data[i][2] for i in range(util.NUM_EXAMPLES)]
+  # extract relevant columns
+  true_ids = np.array([true_table.data[i][0] for i in range(util.NUM_EXAMPLES)])
+  true_images = np.array([np.array(true_table.data[i][3]._image) for i in range(util.NUM_EXAMPLES)])
+  true_wb_masks = [true_table.data[i][2] for i in range(util.NUM_EXAMPLES)]
 
-truth = pd.DataFrame({'id' : true_ids, "truth" : [i for i in range(len(true_images))]})
+  truth = pd.DataFrame({'id' : true_ids, "truth" : [i for i in range(len(true_images))]})
 
-# join guess and truth using Pandas
-results = guess.join(truth, lsuffix="_guess", rsuffix="_truth")
+  # join guess and truth using Pandas
+  results = guess.join(truth, lsuffix="_guess", rsuffix="_truth")
 
-# fields to log to benchmark evaluation dashboard
-columns=["id", "prediction", "ground truth", "overall IOU", "false positive", "false negative"]
-# add columns for all metrics to the evaluation table,
-# tracking for each semantic class:
-# - IOU
-# - false negative pixels
-# - false positive pixels
-columns.extend(["iou_" + s for s in util.BDD_CLASSES[:-1]])
-columns.extend(["fn_" + s for s in util.BDD_CLASSES[:-1]])
-columns.extend(["fp_" + s for s in util.BDD_CLASSES[:-1]])
-eval_table = wandb.Table(columns=columns)
+  # fields to log to benchmark evaluation dashboard
+  columns=["id", "prediction", "ground truth", "overall IOU", "false positive", "false negative"]
+  # add columns for all metrics to the evaluation table,
+  # tracking for each semantic class:
+  # - IOU
+  # - false negative pixels (FNS)
+  # - false positive pixels (FPS)
+  columns.extend(["iou_" + s for s in util.BDD_CLASSES[:-1]])
+  columns.extend(["fn_" + s for s in util.BDD_CLASSES[:-1]])
+  columns.extend(["fp_" + s for s in util.BDD_CLASSES[:-1]])
+  # add semantic categories
+  columns.extend(["iou_" + s for s in util.CITYSCAPE_IDS.keys()])
+  columns.extend(["fn_" + s for s in util.CITYSCAPE_IDS.keys()])
+  columns.extend(["fp_" + s for s in util.CITYSCAPE_IDS.keys()])
+  eval_table = wandb.Table(columns=columns)
 
-ious = []
-fns = []
-fps = []
-for index, row in results.iterrows():
-  # compute scores
-  scores = score_masks(guess_images[row["guess"]], true_images[row["truth"]])
-  # log the net metrics and visualizations for each image
-  r = [row["id_truth"], guess_wb_masks[row["guess"]], true_wb_masks[row["truth"]], scores["net_iou"], scores["net_fp"], scores["net_fn"]]
-  # append per-class metrics to table
-  for metric_name, per_class_list in zip(["iou", "fn", "fp"], [ious, fns, fps]):
-    per_class_scores = [scores[class_id][metric_name] for class_id in range(len(util.BDD_CLASSES) - 1)]
-    per_class_list.append(per_class_scores)
-    r.extend(per_class_scores)
-  eval_table.add_data(*r)
+  ious = []
+  fns = []
+  fps = []
+  for index, row in results.iterrows():
+    # compute scores
+    scores = score_masks(guess_images[row["guess"]], true_images[row["truth"]])
+    # log the net metrics and visualizations for each image
+    r = [row["id_truth"], guess_wb_masks[row["guess"]], true_wb_masks[row["truth"]], scores["net_iou"], scores["net_fp"], scores["net_fn"]]
+    # append per-class metrics to table
+    for metric_name, per_class_list in zip(["iou", "fn", "fp"], [ious, fns, fps]):
+      per_class_scores = [scores[class_id][metric_name] for class_id in range(len(util.BDD_CLASSES) - 1)]
+      per_class_list.append(per_class_scores)
+      r.extend(per_class_scores)
+    # append per-category metrics to table
+    for metric_name in ["iou", "fn", "fp"]:
+      r.extend([scores[category_name][metric_name] for category_name in util.CITYSCAPE_IDS.keys()])
+    
+    eval_table.add_data(*r)
 
-# compute mean metrics for each semantic class and across all classes
-per_class_mean_iou, mean_ious, mean_fps, mean_fns = mean_metrics(ious, fps, fns)
+  # compute mean metrics for each semantic class and across all classes
+  per_class_mean_iou, mean_ious, mean_fps, mean_fns = mean_metrics(ious, fps, fns)
 
-# log to W&B for easy comparison across benchmark submissions 
-iou_d = { "iou_" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_ious)}
-fps_d = { "fps_" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_fps)}
-fns_d = { "fns_" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_fns)}
-wandb.log({"iou_class" : iou_d})
-wandb.log({"fps_class" : fps_d})
-wandb.log({"fns_class" : fns_d})
-wandb.log({"mean_class_iou" : per_class_mean_iou})
+  # log to W&B for easy comparison across benchmark submissions 
+  wandb.log({ "iou_class/" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_ious)})
+  wandb.log({ "fps_class/" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_fps)})
+  wandb.log({ "fns_class/" + util.BDD_CLASSES[i] : m  for i, m in enumerate(mean_fns)})
 
-# compute and log per category metrics
-per_category = per_category_metrics(mean_ious, mean_fps, mean_fns)
-wandb.log({"category" : per_category})
+  wandb.log({"mean_class_iou" : per_class_mean_iou})
+  wandb.log({"mean_class_fps" : np.mean(mean_fps)})
+  wandb.log({"mean_class_fns" : np.mean(mean_fns)})
 
-# wrrite to W&B
-results_at = wandb.Artifact("eval_results", type="results")
-results_at.add(eval_table, "eval_results")
-run.log_artifact(results_at)
-run.finish()
+  # compute and log per category metrics
+  per_category = per_category_metrics(mean_ious, mean_fps, mean_fns)
+  wandb.log(per_category)
 
+  # write to W&B
+  results_at = wandb.Artifact("eval_" + args.team_name, type="results")
+  results_at.add(eval_table, "eval_results")
+  run.log_artifact(results_at)
+  run.finish()
+
+if __name__ == "__main__":
+  parser = argparse.ArgumentParser()
+  parser.add_argument(
+    "-t",
+    "--team_name",
+    type=str,
+    default="",
+    help="Team or participant name to evaluate")
+  parser.add_argument(
+    "--log_answer_images",
+    dest="log_answer_images",
+    action="store_true",
+    default=False,
+    help="only log the ground truth labels for test images to Demo project if this flag is set")
+  args = parser.parse_args()
+  evaluate_model(args)
+ 
+    
