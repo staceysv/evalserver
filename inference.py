@@ -18,8 +18,16 @@ from fastai.vision import *
 
 # locations specific to model builder/participant
 # (may change for different submissions)
-TRAINING_PROJECT = "dsviz-demo"
-MODEL_NAME = "resnet18"
+# curently this mapping is manual--in an actual benchmark, this code would be written
+# by each participating team
+# 1. Find a run by team_name in the training project "segment_dsviz" or "dsviz-demo",
+# e.g. "worldly-galaxy-8"
+# 2. Look up the name and version of the Artifact of type=model created by this run,
+# e.g. "resnet34:v1"
+# 3. Plug in the training project, model name, and model version below
+TRAINING_PROJECT = "segment_dsviz"
+MODEL_NAME = "resnet34"
+MODEL_VERSION = "latest"
 
 # IOU loss function used for training model
 SMOOTH = 1e-6
@@ -35,7 +43,7 @@ def test_model(run, test_data_artifact, test_table):
   test_data_dir = test_data_artifact.download()
 
   # load a model previously trained and saved via Artifacts
-  MODEL_AT = "{}/{}:latest".format(TRAINING_PROJECT, MODEL_NAME)
+  MODEL_AT = "{}/{}:{}".format(TRAINING_PROJECT, MODEL_NAME, MODEL_VERSION)
   model_at = run.use_artifact(MODEL_AT)
   model_path = model_at.get_path(MODEL_NAME).download()
 

@@ -9,7 +9,7 @@ import numpy as np
 # the Answer project.
 
 DEMO_PROJECT = "evalserver_test"
-ANSWER_PROJECT = "evalserver_answers"
+ANSWER_PROJECT = "evalserver_answers_2"
 ENTRY_PROJECT = "evalserver_entry"
 
 # total images to log (for demo purposes)
