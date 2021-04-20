@@ -27,12 +27,12 @@ from inference import iou
 
 def log_model_predictions(args):
   # intialize a candidate model entry run to the Entry project for the benchmark
-  run = wandb.init(project=util.ENTRY_PROJECT, job_type="model_entry")
+  run = wandb.init(project=args.entry_project, job_type="model_entry")
   run.config.team_name = args.team_name
   run.config.entry_name = args.model_name
 
   # get the latest version of the test data from the Demo project
-  TEST_DATA_AT = "{}/test_data:latest".format(util.DEMO_PROJECT)
+  TEST_DATA_AT = "{}/test_data:latest".format(args.demo_project)
   test_data_artifact = run.use_artifact(TEST_DATA_AT)
 
   # create a submission table with the expected fields:
@@ -66,5 +66,18 @@ if __name__ == "__main__":
     type=str,
     default="",
     help="Model name for this benchmark entry (optional)")
+  parser.add_argument(
+    "-d",
+    "--demo_project",
+    type=str,
+    default=args.demo_project,
+    help="demo project name: where participants will find the test data")
+  parser.add_argument(
+    "-e",
+    "--entry_project",
+    type=str,
+    default=args.entry_project,
+    help="entry project name: where participants upload test predictions")
+
   args = parser.parse_args()
   log_model_predictions(args) 
