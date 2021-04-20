@@ -70,13 +70,13 @@ if __name__ == "__main__":
     "-d",
     "--demo_project",
     type=str,
-    default=args.demo_project,
+    default=util.DEMO_PROJECT,
     help="demo project name: where participants will find the test data")
   parser.add_argument(
     "-e",
     "--entry_project",
     type=str,
-    default=args.entry_project,
+    default=util.ENTRY_PROJECT,
     help="entry project name: where participants upload test predictions")
 
   args = parser.parse_args()
