@@ -43,7 +43,8 @@ def log_model_predictions(args):
   test_table = wandb.Table(columns=["id", "prediction", "raw_mask"])
 
   # fill table with predictions
-  result_table = inference.test_model(run, test_data_artifact, test_table)
+  result_table = inference.test_model(run, test_data_artifact, test_table, \
+                 args.train_project, args.model_name, args.model_version))
 
   # log filled result table to artifact
   ENTRY_NAME = "entry_" + args.team_name
@@ -53,7 +54,8 @@ def log_model_predictions(args):
   run.finish()
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser()
+  if __name__ == "__main__":
+  parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   parser.add_argument(
     "-t",
     "--team_name",
@@ -65,7 +67,7 @@ if __name__ == "__main__":
     "--model_name",
     type=str,
     default="",
-    help="Model name for this benchmark entry (optional)")
+    help="Model name for this benchmark entry")
   parser.add_argument(
     "-d",
     "--demo_project",
@@ -78,6 +80,18 @@ if __name__ == "__main__":
     type=str,
     default=util.ENTRY_PROJECT,
     help="entry project name: where participants upload test predictions")
+  parser.add_argument(
+    "-s",
+    "--train_project",
+    type=str,
+    default="",
+    help="Team project where candidate model was saved")
+  parser.add_argument(
+    "-v",
+    "--model_version",
+    type=str,
+    default="latest",
+    help="Model version for this benchmark entry")
 
   args = parser.parse_args()
   log_model_predictions(args) 

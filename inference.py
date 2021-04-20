@@ -25,27 +25,27 @@ from fastai.vision import *
 # 2. Look up the name and version of the Artifact of type=model created by this run,
 # e.g. "resnet34:v1"
 # 3. Plug in the training project, model name, and model version below
-TRAINING_PROJECT = "segment_dsviz"
+TRAIN_PROJECT= "segment_dsviz"
 MODEL_NAME = "resnet34"
 MODEL_VERSION = "latest"
 
 # IOU loss function used for training model
 SMOOTH = 1e-6
 def iou(input, target):
-    target = target.squeeze(1)  # BATCH x 1 x H x W => BATCH x H x W
-    intersection = (input.argmax(dim=1) & target).float().sum((1, 2))  # Will be zero if Truth=0 or Prediction=0
-    union = (input.argmax(dim=1) | target).float().sum((1, 2))         # Will be zero if both are 0
-    iou = (intersection + SMOOTH) / (union + SMOOTH)  # We smooth our division to avoid 0/0
-    return iou.mean()
+  target = target.squeeze(1)  # BATCH x 1 x H x W => BATCH x H x W
+  intersection = (input.argmax(dim=1) & target).float().sum((1, 2))  # Will be zero if Truth=0 or Prediction=0
+  union = (input.argmax(dim=1) | target).float().sum((1, 2))         # Will be zero if both are 0
+  iou = (intersection + SMOOTH) / (union + SMOOTH)  # We smooth our division to avoid 0/0
+  return iou.mean()
 
-def test_model(run, test_data_artifact, test_table):
+def test_model(run, test_data_artifact, test_table, train_project, model_name, model_version):
   # download the test data to a local directory
   test_data_dir = test_data_artifact.download()
 
   # load a model previously trained and saved via Artifacts
-  MODEL_AT = "{}/{}:{}".format(TRAINING_PROJECT, MODEL_NAME, MODEL_VERSION)
+  MODEL_AT = "{}/{}:{}".format(train_project, model_name, model_version)
   model_at = run.use_artifact(MODEL_AT)
-  model_path = model_at.get_path(MODEL_NAME).download()
+  model_path = model_at.get_path(model_name).download()
 
   # a bit of Path gymnastics for fastai
   model_file = model_path.split("/")[-1]
@@ -78,4 +78,3 @@ def test_model(run, test_data_artifact, test_table):
     row = [str(test_id), util.wb_mask(bg_image, pred_mask=prediction_mask), wandb.Image(prediction_mask)]
     test_table.add_data(*row)
   return test_table
-
