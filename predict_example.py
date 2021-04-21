@@ -32,7 +32,7 @@ def log_model_predictions(args):
   run.config.entry_name = args.model_name
 
   # get the latest version of the test data from the Demo project
-  TEST_DATA_AT = "{}/test_data:latest".format(args.demo_project)
+  TEST_DATA_AT = "{}/{}:latest".format(args.demo_project, args.test_data)
   test_data_artifact = run.use_artifact(TEST_DATA_AT)
 
   # create a submission table with the expected fields:
@@ -73,6 +73,11 @@ if __name__ == "__main__":
     type=str,
     default=util.DEMO_PROJECT,
     help="demo project name: where participants will find the test data")
+  parser.add_argument(
+    "--test_data",
+    type=str,
+    default="test_data",
+    help="name of test data artifact in demo project")
   parser.add_argument(
     "-e",
     "--entry_project",
