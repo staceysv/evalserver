@@ -116,11 +116,10 @@ def evaluate_model(args):
   # by default, only log labeled test images (the benchmark ground truth/
   # the corrrect answers) to the private Answer project, which is only
   # visible to the benchmark owners
-  LOG_PROJECT = util.ANSWER_PROJECT
-  if args.log_answer_images:
-    # if this flag is set, log the labeled test images to the Demo project
-    # (which all participants can see)
-    LOG_PROJECT = util.DEMO_PROJECT
+  # optionally set log_project = Demo project (which all participants can see) to
+  # reveal the correct labels on test images in the public Demo project
+  LOG_PROJECT = args.log_project
+  
   # create a new evalution run in the Answer project (default, invisible to participants)
   # or the Demo project (optional, would make all submissions and correct answers visble to everyone)
   run = wandb.init(project=LOG_PROJECT, job_type="evaluate")
@@ -220,11 +219,23 @@ if __name__ == "__main__":
     default="",
     help="Team or participant name to evaluate")
   parser.add_argument(
-    "--log_answer_images",
-    dest="log_answer_images",
-    action="store_true",
-    default=False,
-    help="only log the ground truth labels for test images to Demo project if this flag is set")
+    "-a",
+    "--answer_project",
+    type=str,
+    default=util.ANSWER_PROJECT,
+    help="answer project: where the ground truth for the test data is stored")
+  parser.add_argument(
+    "-e",
+    "--entry_project",
+    type=str,
+    default=util.ENTRY_PROJECT,
+    help="project which holds the team's benchmark entry")
+  parser.add_argument(
+    "-l",
+    "--log_project",
+    type=str,
+    default=util.ANSWER_PROJECT,
+    help="log project: where to log the evaluation results for this entry (defaultsto the Answer project to hide true labels from benchmark participants)")
   args = parser.parse_args()
   evaluate_model(args)
  
