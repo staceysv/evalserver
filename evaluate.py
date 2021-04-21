@@ -127,9 +127,8 @@ def evaluate_model(args):
   # Guess table / Predictions Artifact
   # fetch the participant's predictions from their Entry project
   run.config.team_name = args.team_name
-  predictions_at = run.use_artifact("{}/entry_{}:latest".format(util.ENTRY_PROJECT, args.team_name))
+  predictions_at = run.use_artifact("{}/entry_{}:latest".format(args.entry_project, args.team_name))
   guess_table = predictions_at.get("test_results")
-
   # extract relevant columns
   guess_ids = np.array([guess_table.data[i][0] for i in range(util.NUM_EXAMPLES)])
   guess_images = np.array([np.array(guess_table.data[i][2]._image) for i in range(util.NUM_EXAMPLES)])
@@ -140,7 +139,7 @@ def evaluate_model(args):
 
   # Answer table / Labeled test dataset Artifact
   # fetch the latest version of the ground truth labels
-  answers_at = run.use_artifact("{}/answer_key:latest".format(util.ANSWER_PROJECT))
+  answers_at = run.use_artifact("{}/answer_key:latest".format(args.answer_project))
   true_table = answers_at.get("answer_key")
 
   # extract relevant columns
