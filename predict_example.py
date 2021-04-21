@@ -44,7 +44,7 @@ def log_model_predictions(args):
 
   # fill table with predictions
   result_table = inference.test_model(run, test_data_artifact, test_table, \
-                 args.train_project, args.model_name, args.model_version))
+                 args.train_project, args.model_name, args.model_version)
 
   # log filled result table to artifact
   ENTRY_NAME = "entry_" + args.team_name
@@ -54,7 +54,6 @@ def log_model_predictions(args):
   run.finish()
 
 if __name__ == "__main__":
-  if __name__ == "__main__":
   parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
   parser.add_argument(
     "-t",
