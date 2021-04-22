@@ -44,7 +44,7 @@ def log_model_predictions(args):
 
   # fill table with predictions
   result_table = inference.test_model(run, test_data_artifact, test_table, \
-                 args.train_project, args.model_name, args.model_version)
+                 args.train_project, args.model_name, args.entity, args.model_version)
 
   # log filled result table to artifact
   ENTRY_NAME = "entry_" + args.team_name
@@ -78,6 +78,11 @@ if __name__ == "__main__":
     type=str,
     default="test_data",
     help="name of test data artifact in demo project")
+  parser.add_argument(
+    "--entity",
+    type=str,
+    default="stacey",
+    help="entity (team username) which trained the candidate model")
   parser.add_argument(
     "-e",
     "--entry_project",
