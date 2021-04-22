@@ -38,7 +38,7 @@ def iou(input, target):
   iou = (intersection + SMOOTH) / (union + SMOOTH)  # We smooth our division to avoid 0/0
   return iou.mean()
 
-def test_model(run, test_data_artifact, test_table, train_project, model_name, model_version, entity):
+def test_model(run, test_data_artifact, test_table, train_project, model_name, entity, model_version):
   # download the test data to a local directory
   test_data_dir = test_data_artifact.download()
 
